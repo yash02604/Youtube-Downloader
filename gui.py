@@ -5,6 +5,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 import uuid
 from PIL import ImageTk
 from download_manager import DownloadManager, DownloadPriority
@@ -15,6 +16,7 @@ from video_analyzer import VideoAnalyzer
 from config import config_manager
 from logging_utils import configure_application_logging
 from thumbnail_preview import fetch_thumbnail_image
+from core.events import DownloadEvents
 
 
 class IDMCloneGUI:
@@ -32,16 +34,23 @@ class IDMCloneGUI:
         self.ui_refresh_queue = queue.Queue(maxsize=1)
         self.video_info_queue = queue.Queue()
         self.thumbnail_preview_queue = queue.Queue()
+        self.tool_status_queue = queue.Queue(maxsize=1)
         self.thumbnail_previews_in_flight = set()
         self.video_inspection_pending = False
-        self.download_manager.register_progress_callback(self.on_progress_update)
-        self.download_manager.register_status_callback(self.on_status_update)
+        self._tool_status_refresh_pending = False
+        self.ffmpeg_tools = None
+        self.deno_runtime = None
+        self._last_download_list_refresh = 0.0
+        self.full_refresh_interval = 2.0
+        self.download_events = DownloadEvents(self.download_manager)
+        self.download_events.subscribe(self.on_download_event)
         
         self.configure_style()
         self.setup_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.close_application)
         self.refresh_ffmpeg_status()
-        self.update_interval = 250  # Faster UI updates for realtime speed
+        self.update_interval = 250  # Coalesced UI updates keep progress smooth without busy polling
+        self._queue_ui_refresh()
         self.update_ui()
 
     def configure_style(self):
@@ -161,14 +170,45 @@ class IDMCloneGUI:
         self.ffmpeg_status_label.grid(row=3, column=0, sticky=tk.W, pady=(8, 0))
 
     def refresh_ffmpeg_status(self):
-        """Show whether both FFmpeg tools are available and where they live."""
-        tools = FormatSelector.discover_ffmpeg(
-            configured_path=config_manager.get("ffmpeg_location", ""),
-        )
+        """Discover FFmpeg/FFprobe and Deno without blocking the Tk event loop."""
+        if self._tool_status_refresh_pending:
+            return
+        self._tool_status_refresh_pending = True
+        self.ffmpeg_status_var.set("Checking FFmpeg/FFprobe and Deno…")
+        threading.Thread(
+            target=self._discover_tool_status,
+            name="tool-status-discovery",
+            daemon=True,
+        ).start()
+
+    def _discover_tool_status(self):
+        try:
+            tools = FormatSelector.discover_ffmpeg(
+                configured_path=config_manager.get("ffmpeg_location", ""),
+            )
+            deno_runtime = discover_deno(
+                configured_path=config_manager.get("deno_location", ""),
+            )
+            result = (tools, deno_runtime, None)
+        except Exception as exc:
+            logging.getLogger(__name__).exception("Tool discovery failed")
+            result = (None, None, exc)
+        try:
+            self.tool_status_queue.put_nowait(result)
+        except queue.Full:
+            try:
+                self.tool_status_queue.get_nowait()
+            except queue.Empty:
+                pass
+            self.tool_status_queue.put_nowait(result)
+
+    def _apply_tool_status(self, tools, deno_runtime, error=None):
+        self._tool_status_refresh_pending = False
+        if error is not None:
+            self.ffmpeg_status_var.set("FFmpeg/Deno status check failed. Open Settings to retry.")
+            return
         self.ffmpeg_tools = tools
-        deno_runtime = discover_deno(
-            configured_path=config_manager.get("deno_location", ""),
-        )
+        self.deno_runtime = deno_runtime
         if tools:
             ffmpeg_status = (
                 f"FFmpeg: Available  |  FFprobe: Available  |  Location: {tools.location}"
@@ -973,7 +1013,13 @@ class IDMCloneGUI:
             self.tree.delete(item)
     
     def update_ui(self):
-        """Periodically update the UI"""
+        """Drain worker results and refresh download rows only when needed."""
+        while True:
+            try:
+                tools, deno_runtime, error = self.tool_status_queue.get_nowait()
+            except queue.Empty:
+                break
+            self._apply_tool_status(tools, deno_runtime, error)
         while True:
             try:
                 window, label, status, button, window_key, image, error = self.thumbnail_preview_queue.get_nowait()
@@ -1009,13 +1055,25 @@ class IDMCloneGUI:
                 )
             else:
                 self._show_video_inspection(url, info)
+        refresh_requested = False
         try:
             while True:
                 self.ui_refresh_queue.get_nowait()
+                refresh_requested = True
         except queue.Empty:
             pass
-        self.refresh_downloads_list()
+
+        now = time.monotonic()
+        if (
+            refresh_requested
+            or now - self._last_download_list_refresh >= self.full_refresh_interval
+        ):
+            self.refresh_downloads_list()
+            self._last_download_list_refresh = now
         self.root.after(self.update_interval, self.update_ui)
+
+    def on_download_event(self, event):
+        self._queue_ui_refresh()
 
     def on_progress_update(self, _download_id, _downloaded, _file_size):
         """Queue a UI refresh without touching Tk from a worker thread."""
