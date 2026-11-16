@@ -16,7 +16,7 @@ from video_analyzer import VideoAnalyzer
 from config import config_manager
 from logging_utils import configure_application_logging
 from thumbnail_preview import fetch_thumbnail_image
-from core.events import DownloadEvents
+from core.service import DownloadService
 
 
 class IDMCloneGUI:
@@ -42,8 +42,8 @@ class IDMCloneGUI:
         self.deno_runtime = None
         self._last_download_list_refresh = 0.0
         self.full_refresh_interval = 2.0
-        self.download_events = DownloadEvents(self.download_manager)
-        self.download_events.subscribe(self.on_download_event)
+        self.download_service = DownloadService(self.download_manager)
+        self.download_subscription = self.download_service.subscribe()
         
         self.configure_style()
         self.setup_ui()
@@ -437,9 +437,21 @@ class IDMCloneGUI:
         ttk.Button(buttons, text="Close", command=window.destroy).pack(side=tk.RIGHT, padx=8)
 
     def close_application(self):
-        """Persist resumable work before closing the Tk window."""
-        self.download_manager._persist_downloads()
-        self.root.destroy()
+        """Keep shutdown waiting and disk/network work off the Tk thread."""
+        if getattr(self, '_closing', False):
+            return
+        self._closing = True
+        finished = threading.Event()
+        def stop():
+            self.download_service.shutdown(timeout=5)
+            finished.set()
+        threading.Thread(target=stop, name='desktop-shutdown', daemon=True).start()
+        def poll():
+            if finished.is_set():
+                self.root.destroy()
+            else:
+                self.root.after(50, poll)
+        poll()
 
     def setup_categories_panel(self, parent):
         """Left categories tree"""
@@ -576,7 +588,7 @@ class IDMCloneGUI:
 
     def show_selected_error(self, _event=None):
         download_id = self.get_selected_download_id()
-        info = self.download_manager.get_download_info(download_id) if download_id else None
+        info = self.download_service.get_download(download_id) if download_id else None
         if info and info.get("error"):
             error_info = UserFriendlyError.get_user_friendly_message(
                 RuntimeError(info["error"]), info.get("error_category") or "UNKNOWN_ERROR"
@@ -683,7 +695,7 @@ class IDMCloneGUI:
                 custom_name = custom_name if custom_name else None
             connections = max(1, min(32, self.connections_var.get()))
             
-            download_id = self.download_manager.add_download(
+            download_id = self.download_service.add_download(
                 url, 
                 location,
                 num_threads=connections,
@@ -974,7 +986,7 @@ class IDMCloneGUI:
             self.tree.item(item, 'text'): item
             for item in self.tree.get_children()
         }
-        downloads = self.download_manager.get_all_downloads()
+        downloads = self.download_service.list_downloads()
         for download in downloads:
             if download:
                 download_id = download['id']
@@ -1014,6 +1026,9 @@ class IDMCloneGUI:
     
     def update_ui(self):
         """Drain worker results and refresh download rows only when needed."""
+        subscription = getattr(self, 'download_subscription', None)
+        if subscription is not None:
+            subscription.drain(self.on_download_event)
         while True:
             try:
                 tools, deno_runtime, error = self.tool_status_queue.get_nowait()
@@ -1100,7 +1115,7 @@ class IDMCloneGUI:
         """Pause the selected download"""
         download_id = self.get_selected_download_id()
         if download_id:
-            self.download_manager.pause_download(download_id)
+            self.download_service.pause(download_id)
         else:
             messagebox.showwarning("Warning", "Please select a download to pause.")
     
@@ -1108,15 +1123,15 @@ class IDMCloneGUI:
         """Resume the selected download"""
         download_id = self.get_selected_download_id()
         if download_id:
-            self.download_manager.resume_download(download_id)
+            self.download_service.resume(download_id)
         else:
             messagebox.showwarning("Warning", "Please select a download to resume.")
 
     def retry_selected(self):
         download_id = self.get_selected_download_id()
-        info = self.download_manager.get_download_info(download_id) if download_id else None
+        info = self.download_service.get_download(download_id) if download_id else None
         if info and info.get("status") in {"Paused", "Error", "Interrupted"}:
-            self.download_manager.resume_download(download_id)
+            self.download_service.resume(download_id)
         else:
             messagebox.showinfo("Retry or resume", "Select a paused, interrupted, or failed download.")
 
@@ -1140,7 +1155,7 @@ class IDMCloneGUI:
 
     def open_selected_file(self):
         download_id = self.get_selected_download_id()
-        info = self.download_manager.get_download_info(download_id) if download_id else None
+        info = self.download_service.get_download(download_id) if download_id else None
         path = info.get("final_file") if info else None
         if not path or not os.path.isfile(path):
             messagebox.showinfo("Open downloaded file", "The selected item has no completed file.")
@@ -1153,7 +1168,7 @@ class IDMCloneGUI:
 
     def open_selected_folder(self):
         download_id = self.get_selected_download_id()
-        info = self.download_manager.get_download_info(download_id) if download_id else None
+        info = self.download_service.get_download(download_id) if download_id else None
         folder = info.get("destination") if info else None
         if not folder or not os.path.isdir(folder):
             messagebox.showinfo("Open download folder", "The selected download folder is unavailable.")
@@ -1175,7 +1190,7 @@ class IDMCloneGUI:
                 filename = download.current_filename or download.get_filename()
                 if messagebox.askyesno("Confirm Cancellation", 
                                      f"Are you sure you want to cancel '{filename}'?"):
-                    self.download_manager.cancel_download(download_id)
+                    self.download_service.cancel(download_id)
             else:
                 messagebox.showwarning("Warning", "Please select an active download to cancel.")
         else:
@@ -1191,7 +1206,7 @@ class IDMCloneGUI:
                 status = download.status.lower()
                 if messagebox.askyesno("Confirm Removal", 
                                      f"Remove the '{filename}' entry ({status}) from the list? The downloaded media file will be kept."):
-                    if not self.download_manager.remove_download(download_id):
+                    if not self.download_service.remove(download_id):
                         messagebox.showwarning(
                             "Download Busy",
                             "Wait for the download worker to finish before removing it.",
@@ -1239,7 +1254,7 @@ class IDMCloneGUI:
                     to_remove.append(download_id)
             
             for download_id in to_remove:
-                self.download_manager.remove_download(download_id)
+                self.download_service.remove(download_id)
             self.download_manager.clear_history_entries()
             
             messagebox.showinfo("Success", f"Cleared {len(to_remove)} items from history.")

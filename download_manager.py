@@ -733,6 +733,8 @@ class DownloadManager(DownloadPersistence):
         """Start queued work without exceeding the global concurrency limit."""
         while True:
             with self.lock:
+                if getattr(self, '_shutting_down', False):
+                    return
                 if self.active_downloads >= self.max_concurrent or self.download_queue.empty():
                     return
                 download_id = self.download_queue.get()
@@ -2239,6 +2241,46 @@ class DownloadManager(DownloadPersistence):
         history_entries = [entry for entry in history if entry['id'] not in active_ids]
         return [entry for entry in active if entry] + history_entries
     
+    def stop_accepting_work(self):
+        """Service shutdown hook: freeze queue and request resumable pauses."""
+        with self.lock:
+            self._shutting_down = True
+            self._shutdown_workers = []
+            ids = list(self.downloads)
+            for job in self.downloads.values():
+                job.resume_pending = False
+                if job.worker is not None:
+                    self._shutdown_workers.append(job.worker)
+        for download_id in ids:
+            self.pause_download(download_id)
+        self._persist_downloads()
+
+    def workers_stopped(self):
+        with self.lock:
+            for job in self.downloads.values():
+                if job.worker is not None and job.worker not in self._shutdown_workers:
+                    self._shutdown_workers.append(job.worker)
+            return self.active_downloads == 0 and not any(w.is_alive() for w in self._shutdown_workers)
+
+    def finish_shutdown(self):
+        self._persist_downloads()
+        self.session_manager.close_all_sessions()
+        with self.lock:
+            self._shutdown_workers.clear()
+            for job in self.downloads.values():
+                if job.worker is not None and not job.worker.is_alive():
+                    job.worker = None
+
+    def unregister_progress_callback(self, callback):
+        with self.lock:
+            if callback in self.progress_callbacks:
+                self.progress_callbacks.remove(callback)
+
+    def unregister_status_callback(self, callback):
+        with self.lock:
+            if callback in self.status_callbacks:
+                self.status_callbacks.remove(callback)
+
     def get_event_snapshot(self, download_id):
         """Copy one job's event fields without scanning history or playlists."""
         with self.lock:
