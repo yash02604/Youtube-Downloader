@@ -1,3 +1,5 @@
+from core.models import Download, DownloadPriority, download_to_dict
+from core.persistence import DownloadPersistence
 import os
 import logging
 import ipaddress
@@ -297,133 +299,8 @@ class HTTPSessionManager:
         return f"{parsed.scheme}://{parsed.netloc}"
 
 
-class DownloadPriority:
-    """Enumeration for download priorities"""
-    HIGH = 3
-    MEDIUM = 2
-    LOW = 1
-    DEFAULT = 2
 
 
-class Download:
-    """Represents a single download task"""
-    
-    def __init__(self, url: str, download_path: str, download_id: str, 
-                 num_threads: int = 8, is_video: bool = False, video_info: Optional[dict] = None,
-                 custom_filename: Optional[str] = None, priority: int = DownloadPriority.DEFAULT):
-        self.original_url = url  # Keep original URL for video downloads
-        self.url = url
-        self.destination_dir = os.path.abspath(download_path)
-        self.download_path = self.destination_dir  # Will be replaced with actual file path later
-        self.download_id = download_id
-        self.num_threads = num_threads
-        self.is_video = is_video
-        self.video_info = video_info
-        self.download_type = "Video"  # "Video" or "Audio Only"
-        self.video_quality = "Best"  # Quality selection
-        self.audio_quality = "Best"  # Audio quality selection
-        self.custom_filename = custom_filename
-        self.priority = priority  # Download priority level
-        self.current_filename: Optional[str] = None
-        self.pause_requested = False
-        self.cancel_requested = False
-        self.pause_event = threading.Event()
-        self.cancel_event = threading.Event()
-        self.file_size = 0
-        self.downloaded = 0
-        self.status = "Queued"  # Queued, Downloading, Paused, Completed, Error, Cancelled, Analyzing
-        self.speed = 0  # bytes per second
-        self.eta = 0  # estimated time in seconds
-        self.error_message = None
-        self.error_category = None
-        self.threads = []
-        self.temp_files = []
-        self.start_time = None
-        self.last_update_time = None
-        self.last_downloaded = 0
-        self.ydl_process = None
-        self.avg_speed = 0
-        self.etag = None
-        self.last_modified = None
-        self.effective_url = None
-        self.part_path: Optional[str] = None
-        self.worker: Optional[threading.Thread] = None
-        self.last_persisted_bytes = 0
-        self.slot_active = False
-        self.resume_pending = False
-        self.video_stage = None
-        self.active_postprocessor: Optional[str] = None
-        self.fragment_index = None
-        self.fragment_count = None
-        self.playlist_group_id = None
-        self.playlist_entry_id = None
-        self.playlist_title = None
-        self.playlist_index = None
-        self.playlist_count = None
-        self.selected_video_format = None
-        self.selected_audio_format = None
-        self.selected_format_summary = None
-        self.execution_generation = 0
-        self.slot_generation: Optional[int] = None
-        self.retry_count = 0
-        self.video_title: Optional[str] = None
-        self.extractor: Optional[str] = None
-        self.video_id: Optional[str] = None
-        self.completed_at: Optional[str] = None
-        self.final_output_path: Optional[str] = None
-        self.media_validation_status: Optional[str] = None
-        self.subtitle_languages: list[str] = []
-        self.download_subtitles = False
-        self.embed_subtitles = False
-        self.save_thumbnail = False
-        self.embed_thumbnail = False
-        self.embed_metadata = False
-        self.optional_media_warnings: list[str] = []
-        
-    def _sanitize_name(self, name: str) -> str:
-        sanitized = "".join(
-            char for char in name if char.isalnum() or char in (" ", "-", "_")
-        ).strip(" .")[:100]
-        if not sanitized:
-            sanitized = "download"
-        if sanitized.upper() in {
-            "CON", "PRN", "AUX", "NUL",
-            *(f"COM{number}" for number in range(1, 10)),
-            *(f"LPT{number}" for number in range(1, 10)),
-        }:
-            sanitized = f"_{sanitized}"
-        return sanitized
-    
-    def get_filename(self) -> str:
-        """Extract filename from custom input, video info, or URL"""
-        default_ext = 'bin'
-        if self.download_type == "Audio Only":
-            default_ext = 'mp3'
-        elif self.is_video and self.video_info:
-            # For videos, always use mkv format
-            default_ext = 'mkv'
-        elif self.is_video:
-            default_ext = 'mkv'
-        default_ext = default_ext.lstrip('.')
-        
-        if self.custom_filename:
-            name = self.custom_filename.strip()
-            base, ext = os.path.splitext(name)
-            base = self._sanitize_name(base or name)
-            extension = "".join(char for char in ext.lstrip(".") if char.isalnum())[:10]
-            return f"{base}.{extension or default_ext}"
-        
-        if self.is_video and self.video_info:
-            title = self.video_info.get('title', 'video')
-            base = self._sanitize_name(title)
-            return f"{base}.{default_ext}"
-        
-        parsed = urlparse(self.url)
-        filename = os.path.basename(parsed.path)
-        base, ext = os.path.splitext(filename)
-        base = self._sanitize_name(base or "download")
-        extension = "".join(char for char in ext.lstrip(".") if char.isalnum())[:10]
-        return f"{base}.{extension or default_ext or 'bin'}"
 
 
 class PriorityQueue:
@@ -497,7 +374,7 @@ class PriorityQueue:
                         break
 
 
-class DownloadManager:
+class DownloadManager(DownloadPersistence):
     """Main download manager class"""
     
     def __init__(self, max_concurrent_downloads: int = 3,
@@ -533,53 +410,9 @@ class DownloadManager:
         # Initialize bandwidth limiter (unlimited by default)
         self.bandwidth_limiter = BandwidthLimiter(None)
 
-    @staticmethod
-    def _migrate_legacy_json(source: Path, destination: Path, expected_type):
-        """Copy a legacy working-directory JSON file once, preserving the original."""
-        if destination.exists() or not source.is_file():
-            return
-        try:
-            payload = json.loads(source.read_text(encoding="utf-8"))
-            if not isinstance(payload, expected_type):
-                return
-            DownloadManager._write_json_atomic(destination, payload)
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            return
 
-    def _load_history(self) -> list:
-        if self.history_file.exists():
-            try:
-                data = json.loads(self.history_file.read_text(encoding="utf-8"))
-                if isinstance(data, list):
-                    return data
-                logger.warning("Download history has an unexpected format: %s", self.history_file)
-            except (OSError, json.JSONDecodeError) as exc:
-                logger.warning("History load error (%s): %s", self.history_file, exc)
-        return []
 
-    def _save_history(self):
-        try:
-            with self.lock:
-                limit = max(10, min(5000, int(config_manager.get("history_limit", HISTORY_LIMIT))))
-                self._write_json_atomic(
-                    self.history_file, list(self.history[-limit:])
-                )
-        except (OSError, TypeError, ValueError) as exc:
-            logger.error("History save error: %s", exc)
 
-    @staticmethod
-    def _write_json_atomic(path: Path, data):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = path.with_name(
-            f"{path.name}.{uuid.uuid4().hex}.tmp"
-        )
-        try:
-            with open(temporary_path, "x", encoding="utf-8") as temporary_file:
-                json.dump(data, temporary_file, indent=2, ensure_ascii=False)
-            os.replace(temporary_path, path)
-        finally:
-            if temporary_path.exists():
-                temporary_path.unlink()
 
     @staticmethod
     def _validate_url(url: str) -> str:
@@ -666,155 +499,7 @@ class DownloadManager:
         return True
 
     def _download_to_dict(self, download: Download) -> dict:
-        return {
-            "id": download.download_id,
-            "url": download.original_url,
-            "destination_dir": download.destination_dir,
-            "download_path": download.download_path,
-            "current_filename": download.current_filename,
-            "custom_filename": download.custom_filename,
-            "num_threads": download.num_threads,
-            "is_video": download.is_video,
-            "download_type": download.download_type,
-            "video_quality": download.video_quality,
-            "audio_quality": download.audio_quality,
-            "playlist_group_id": download.playlist_group_id,
-            "playlist_entry_id": download.playlist_entry_id,
-            "playlist_title": download.playlist_title,
-            "playlist_index": download.playlist_index,
-            "playlist_count": download.playlist_count,
-            "priority": download.priority,
-            "file_size": download.file_size,
-            "downloaded": download.downloaded,
-            "status": download.status,
-            "error_message": download.error_message,
-            "error_category": download.error_category,
-            "etag": download.etag,
-            "last_modified": download.last_modified,
-            "effective_url": download.effective_url,
-            "video_stage": download.video_stage,
-            "execution_generation": download.execution_generation,
-            "retry_count": download.retry_count,
-            "video_title": download.video_title,
-            "extractor": download.extractor,
-            "video_id": download.video_id,
-            "completed_at": download.completed_at,
-            "selected_video_format": download.selected_video_format,
-            "selected_audio_format": download.selected_audio_format,
-            "selected_format_summary": download.selected_format_summary,
-            "media_validation_status": download.media_validation_status,
-            "subtitle_languages": list(download.subtitle_languages),
-            "download_subtitles": download.download_subtitles,
-            "embed_subtitles": download.embed_subtitles,
-            "save_thumbnail": download.save_thumbnail,
-            "embed_thumbnail": download.embed_thumbnail,
-            "embed_metadata": download.embed_metadata,
-            "optional_media_warnings": list(download.optional_media_warnings),
-            "previous_state": download.status,
-        }
-
-    def _persist_downloads(self):
-        with self.lock:
-            resumable = [
-                self._download_to_dict(download)
-                for download in self.downloads.values()
-                if download.status not in {"Completed", "Cancelled"}
-            ]
-            try:
-                self._write_json_atomic(self.state_file, resumable)
-            except (OSError, TypeError, ValueError) as exc:
-                logger.error("Download state save error (%s): %s", self.state_file, exc)
-
-    def _load_persisted_downloads(self):
-        if not self.state_file.exists():
-            return
-        try:
-            saved_downloads = json.loads(self.state_file.read_text(encoding="utf-8"))
-            if not isinstance(saved_downloads, list):
-                raise ValueError("download state must contain a list")
-        except (OSError, json.JSONDecodeError, ValueError) as exc:
-            logger.warning("Download state load error (%s): %s", self.state_file, exc)
-            return
-
-        for saved in saved_downloads:
-            try:
-                if not isinstance(saved, dict):
-                    raise ValueError("download entry must be an object")
-                download_id = saved["id"]
-                url = self._validate_url(saved["url"])
-                destination_dir = os.path.abspath(saved["destination_dir"])
-                download = Download(
-                    url,
-                    destination_dir,
-                    download_id,
-                    num_threads=int(saved.get("num_threads", 1)),
-                    is_video=bool(saved.get("is_video", False)),
-                    custom_filename=saved.get("custom_filename"),
-                    priority=int(saved.get("priority", DownloadPriority.DEFAULT)),
-                )
-                download.download_type = saved.get("download_type", "Video")
-                download.video_quality = saved.get("video_quality", "Best")
-                download.audio_quality = saved.get("audio_quality", "Best")
-                download.playlist_group_id = saved.get("playlist_group_id")
-                download.playlist_entry_id = saved.get("playlist_entry_id")
-                download.playlist_title = saved.get("playlist_title")
-                download.playlist_index = saved.get("playlist_index")
-                download.playlist_count = saved.get("playlist_count")
-                filename = saved.get("current_filename")
-                if self._is_safe_download_filename(filename):
-                    download.current_filename = filename
-                    download.download_path = os.path.join(destination_dir, filename)
-                download.part_path = download.download_path + ".part"
-                if os.path.isfile(download.part_path):
-                    download.downloaded = os.path.getsize(download.part_path)
-                download.file_size = max(0, int(saved.get("file_size", 0) or 0))
-                saved_error = saved.get("error_message")
-                download.error_message = (
-                    redact_sensitive_text(saved_error) if isinstance(saved_error, str) else None
-                )
-                download.error_category = saved.get("error_category")
-                download.etag = saved.get("etag")
-                download.last_modified = saved.get("last_modified")
-                download.effective_url = saved.get("effective_url")
-                download.video_stage = saved.get("video_stage")
-                download.execution_generation = max(
-                    0, int(saved.get("execution_generation", 0) or 0)
-                )
-                download.retry_count = max(0, int(saved.get("retry_count", 0) or 0))
-                download.video_title = saved.get("video_title")
-                download.extractor = saved.get("extractor")
-                download.video_id = saved.get("video_id")
-                download.completed_at = saved.get("completed_at")
-                download.selected_video_format = saved.get("selected_video_format")
-                download.selected_audio_format = saved.get("selected_audio_format")
-                download.selected_format_summary = saved.get("selected_format_summary")
-                download.media_validation_status = saved.get("media_validation_status")
-                download.subtitle_languages = list(saved.get("subtitle_languages") or [])
-                download.download_subtitles = bool(saved.get("download_subtitles", False))
-                download.embed_subtitles = bool(saved.get("embed_subtitles", False))
-                download.save_thumbnail = bool(saved.get("save_thumbnail", False))
-                download.embed_thumbnail = bool(saved.get("embed_thumbnail", False))
-                download.embed_metadata = bool(saved.get("embed_metadata", False))
-                download.optional_media_warnings = [
-                    redact_sensitive_text(warning[:300])
-                    for warning in saved.get("optional_media_warnings", [])
-                    if isinstance(warning, str)
-                ]
-                prior_status = saved.get("status")
-                download.status = (
-                    "Interrupted" if prior_status in {
-                        "Downloading", "Fetching info", "Processing", "Merging",
-                        "Converting", "Pausing", "Cancelling", "Analyzing",
-                    } else prior_status if prior_status in {"Paused", "Error", "Interrupted"}
-                    else "Paused"
-                )
-                download.start_time = None
-                download.last_update_time = time.time()
-                self.downloads[download_id] = download
-            except (KeyError, TypeError, ValueError, OSError) as exc:
-                logger.warning("Skipping invalid recovered download: %s", exc)
-
-        self._persist_downloads()
+        return download_to_dict(download)
 
     def _add_history_entry(self, info: dict):
         if not info:
@@ -2554,6 +2239,22 @@ class DownloadManager:
         history_entries = [entry for entry in history if entry['id'] not in active_ids]
         return [entry for entry in active if entry] + history_entries
     
+    def get_event_snapshot(self, download_id):
+        """Copy one job's event fields without scanning history or playlists."""
+        with self.lock:
+            job = self.downloads.get(download_id)
+            if job is None:
+                return {}
+            return {
+                'status': job.status, 'stage': job.video_stage,
+                'filename': job.current_filename, 'downloaded_bytes': job.downloaded,
+                'total_bytes': job.file_size, 'speed': job.speed, 'eta': job.eta,
+                'progress': min(100, job.downloaded / job.file_size * 100) if job.file_size else 0,
+                'error_category': job.error_category, 'error_message': job.error_message,
+                'playlist_title': job.playlist_title, 'playlist_index': job.playlist_index,
+                'playlist_count': job.playlist_count,
+            }
+
     def register_progress_callback(self, callback: Callable):
         """Register a callback for download progress updates"""
         with self.lock:
