@@ -53,6 +53,13 @@ class DownloadEvents:
                     self._subscribers.remove(callback)
         return unsubscribe
 
+    def close(self):
+        """Detach engine hooks so a service cannot leak through callback lists."""
+        self._manager.unregister_progress_callback(self._progress)
+        self._manager.unregister_status_callback(self._status)
+        with self._lock:
+            self._subscribers.clear()
+
     def _publish(self, event):
         with self._lock:
             subscribers = tuple(self._subscribers)
