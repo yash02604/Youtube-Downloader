@@ -48,3 +48,16 @@ dist-installer/
 
 # Backend runtime storage
 .web-data/
+# Frontend generated files
+web/frontend/node_modules/
+web/frontend/.next/
+web/frontend/coverage/
+web/frontend/test-results/
+web/frontend/playwright-report/
+web/frontend/*.tsbuildinfo
+web/frontend/.env*
+!web/frontend/.env.example
+web/frontend/next-env.d.ts
+# Keep frontend source helpers despite the legacy Python lib/ ignore rule.
+!web/frontend/src/lib/
+!web/frontend/src/lib/**
