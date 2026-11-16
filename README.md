@@ -164,3 +164,10 @@ run those tests in an environment that permits local sockets.
 - Facebook Videos
 - Instagram Videos
 - And many more (via yt-dlp)
+
+## Local web interface
+
+The optional Next.js frontend and FastAPI backend run separately from the desktop
+application. See [the local web workflow](docs/WEB_FRONTEND.md) for setup,
+validation and limitations. The API remains for local development; completed
+files are not served to the browser yet.
