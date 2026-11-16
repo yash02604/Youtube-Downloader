@@ -8,7 +8,7 @@ import threading
 import time
 import uuid
 from PIL import ImageTk
-from download_manager import DownloadManager, DownloadPriority
+from core.manager import DownloadManager, DownloadPriority
 from error_handler import UserFriendlyError
 from format_selector import FormatSelector
 from js_runtime import discover_deno
