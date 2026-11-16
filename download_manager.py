@@ -381,7 +381,8 @@ class DownloadManager(DownloadPersistence):
                  history_file: Optional[Path] = None,
                  state_file: Optional[Path] = None,
                  request_timeout: tuple = (10, 10),
-                 max_retries: int = 3):
+                 max_retries: int = 3, allow_browser_session: bool = True):
+        self.allow_browser_session = allow_browser_session
         self.downloads: dict[str, Download] = {}
         self.max_concurrent = max(1, max_concurrent_downloads)
         self.active_downloads = 0
@@ -1465,7 +1466,8 @@ class DownloadManager(DownloadPersistence):
                         "Thumbnail embedding skipped because FFmpeg is unavailable; the thumbnail file may still be saved."
                     )
             ydl_opts.update(optional_media_options)
-            ydl_opts.update(youtube_session_options(download.original_url))
+            if self.allow_browser_session:
+                ydl_opts.update(youtube_session_options(download.original_url))
             if FormatSelector.requires_ffmpeg(
                 download.download_type, download.audio_quality
             ):

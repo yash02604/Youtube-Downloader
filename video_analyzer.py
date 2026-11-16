@@ -110,7 +110,7 @@ class VideoAnalyzer:
         }
 
     @staticmethod
-    def get_video_info(url: str) -> Optional[Dict]:
+    def get_video_info(url: str, *, allow_browser_session: bool = True) -> Optional[Dict]:
         """Extract metadata only; media is not downloaded."""
         options = {
             "quiet": True,
@@ -119,7 +119,8 @@ class VideoAnalyzer:
             "extract_flat": "in_playlist",
             "noplaylist": not VideoAnalyzer.is_playlist_url(url),
         }
-        options.update(youtube_session_options(url))
+        if allow_browser_session:
+            options.update(youtube_session_options(url))
         deno_runtime = discover_deno(
             configured_path=config_manager.get("deno_location", ""),
         )

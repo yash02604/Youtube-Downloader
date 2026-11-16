@@ -45,3 +45,6 @@ dist-installer/
 .test-tmp/
 .dist/
 .release-venv/
+
+# Backend runtime storage
+.web-data/
