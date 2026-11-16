@@ -1,0 +1,6 @@
+requests>=2.31.0
+tqdm>=4.66.0
+yt-dlp[default]>=2026.10.26
+psutil>=5.9.0
+Pillow>=10.0.0
+
