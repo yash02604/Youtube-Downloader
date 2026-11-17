@@ -91,10 +91,27 @@ but its Windows local build failed during builder package installation with
 
 A disposable Linux container running the same CLI compiled Next.js and passed
 its TypeScript stage, then exited with code 137 while collecting page data.
-The cause of that termination was not confirmed. Full `vercel build` success,
-backend packaging and deployed same-origin routing remain unverified. The user
-must validate the preview build and routing before treating the deployment as
-working. These local checks do not establish real-download readiness.
+The cause of that termination was not confirmed. That local attempt did not
+establish full Vercel build success or backend packaging.
+
+The subsequent Git-triggered cloud preview for code commit
+`7e0ca1ece6d002547d0ed9d0bd888658f7203bbb` built successfully and reached Ready.
+Its build log confirms Python 3.12 and dependency installation from the root
+`pyproject.toml`; the backend FastAPI function is approximately 31.55 MB.
+Authenticated requests to the same preview hostname verified:
+
+- `/`: HTTP 200 with the Next.js page title `Video Download Manager`.
+- `/api/health`: HTTP 200 and `{"status":"ok","scope":"local-development"}`,
+  including with the preview's exact HTTPS Origin header. The existing health
+  response's scope label was retained unchanged.
+- `/api`: FastAPI's JSON 404 (`{"detail":"Not Found"}`), confirming bare `/api`
+  reaches the backend rather than the Next.js catch-all.
+
+Preview: https://youtube-downloader-lc3p2kozy-yash02604s-projects.vercel.app
+
+Deployment Protection remained enabled. The automation bypass credential
+automatically created by `vercel curl` for these checks was revoked afterward.
+No real media download or deployed SSE stream was tested.
 
 This is a deployment proof of concept, not a production downloader host.
 Temporary files and in-memory job state are per-instance and disposable.
