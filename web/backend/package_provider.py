@@ -132,7 +132,7 @@ def _run(command, *, cwd, env, timeout):
             category = 'LOCKFILE_OR_CACHE_UNAVAILABLE'
         elif 'module not found' in detail or 'cannot find module' in detail:
             category = 'MODULE_UNAVAILABLE'
-        stage = 'DEPENDENCY_INSTALL' if len(command) > 1 and command[1] == 'install' else 'OFFLINE_IMPORT'
+        stage = 'DEPENDENCY_INSTALL' if len(command) > 1 and command[1] in ('install', 'ci') else 'OFFLINE_IMPORT'
         raise RuntimeError(f'Pinned provider {stage} failed ({category})') from None
 
 
@@ -159,8 +159,10 @@ def package_provider(deno, destination=None):
         token_cache.mkdir()
         env = dict(os.environ, DENO_DIR=str(cache), XDG_CACHE_HOME=str(token_cache),
                    DENO_NO_PROMPT='1', DENO_NO_UPDATE_CHECK='1', FORCE_COLOR='false')
-        _run([str(deno), 'install', '--prod', '--entrypoint', 'src/generate_once.ts',
-              '--allow-scripts=npm:canvas', '--frozen'],
+        # npm's lockfile-backed omit mode avoids Deno's isolated store copying
+        # development packages even when its production entrypoint mode is set.
+        # Deno consumes this standard local node_modules layout in manual mode.
+        _run(['npm', 'ci', '--omit=dev'],
              cwd=server, env=env, timeout=600)
         if not (server / 'node_modules').is_dir():
             raise RuntimeError('Pinned provider dependencies were not packaged')

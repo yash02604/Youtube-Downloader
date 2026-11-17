@@ -111,7 +111,7 @@ class ProviderPackagingTests(unittest.TestCase):
         commands = []
         def run(command, **kwargs):
             commands.append((command, kwargs))
-            if command[1] == 'install':
+            if command[1] == 'ci':
                 (kwargs['cwd'] / 'node_modules').mkdir()
                 (kwargs['cwd'] / 'node_modules' / 'runtime-asset.js').write_text('required production asset')
                 duplicate = Path(kwargs['env']['DENO_DIR']) / 'npm'
@@ -134,7 +134,7 @@ class ProviderPackagingTests(unittest.TestCase):
             self.assertEqual((server / 'node_modules' / 'runtime-asset.js').read_text(), 'required production asset')
             self.assertFalse((root / 'bgutil' / 'verification-cache').exists())
             download.assert_called_once_with(provider.ARCHIVE_URL, timeout=60)
-            self.assertEqual(commands[0][0][1:], ['install', '--prod', '--entrypoint', 'src/generate_once.ts', '--allow-scripts=npm:canvas', '--frozen'])
+            self.assertEqual(commands[0][0], ['npm', 'ci', '--omit=dev'])
             smoke = commands[1][0]
             self.assertIn('--cached-only', smoke)
             self.assertIn('--node-modules-dir=manual', smoke)

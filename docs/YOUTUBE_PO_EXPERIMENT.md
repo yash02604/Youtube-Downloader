@@ -38,12 +38,13 @@ Vercel's Python builder also excludes node_modules by default. The backend
 function explicitly includes the generated provider production node_modules
 tree (including hidden .deno files) and upstream package-lock.json. Runtime
 asset diagnostics separately check the launcher, script and modules directory.
-Measured build output showed that the initial production install retained
-development packages in the isolated dependency store (including SWC,
-TypeScript and format/lint tools). Installation is therefore scoped to the
-production graph rooted at src/generate_once.ts using Deno's supported
---prod --entrypoint mode. Build-only compiler caches are not deployed; runtime
-uses its writable temporary cache and cannot download missing modules.
+Measured Linux builds showed that Deno's production and production-entrypoint
+installs both retained development packages in the isolated store (including
+SWC, TypeScript and format/lint tools). The build therefore uses the upstream
+package-lock.json with npm ci --omit=dev to install only production packages.
+The script still runs under Deno 2.9.8 in documented manual-node_modules mode;
+Node/npm are build tools, not the deployed provider runtime. Build-only compiler
+caches are not deployed. Runtime cannot download missing module code.
 
 ## One profile for analysis and downloads
 
