@@ -45,6 +45,12 @@ class PoTokenProfileTests(unittest.TestCase):
         for key in ('cookiesfrombrowser', 'cookiefile', 'proxy', 'po_token'):
             self.assertNotIn(key, profile.options)
 
+    def test_empty_build_cache_is_not_a_runtime_asset_requirement(self):
+        (self.root/'bgutil/deno_dir').rmdir()
+        profile = self.profile()
+        self.assertTrue(profile.assets)
+        self.assertTrue(all(profile.asset_checks.values()))
+
     def test_missing_plugin_or_assets_fails_closed(self):
         from web.backend.youtube_profile import ProviderFailure
         for installed in (False, True):

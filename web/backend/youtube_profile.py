@@ -40,10 +40,12 @@ class WebYouTubeProfile:
         self.installed, self.version = plugin_status()
         self.server = self.root / 'bgutil' / 'server'
         self.wrapper = self.root / 'deno-private'
-        self.assets = ((self.server / 'src/generate_once.ts').is_file()
-                       and (self.server / 'node_modules').is_dir()
-                       and (self.root / 'bgutil/deno_dir').is_dir()
-                       and self.wrapper.is_file())
+        self.asset_checks = {
+            'script': (self.server / 'src/generate_once.ts').is_file(),
+            'modules': (self.server / 'node_modules').is_dir(),
+            'launcher': self.wrapper.is_file(),
+        }
+        self.assets = all(self.asset_checks.values())
         self.ready = False
         self.initialization_failed = False
         self.attempted = False
@@ -65,7 +67,7 @@ class WebYouTubeProfile:
         # These settings are process-wide but fixed for this Vercel function,
         # never changed on a desktop engine or per user/account.
         if os.environ.get('VERCEL') == '1':
-            os.environ['DENO_DIR'] = str(self.root / 'bgutil/deno_dir')
+            os.environ['DENO_DIR'] = str(Path(tempfile.gettempdir()) / 'downloader-web' / 'provider-deno')
             os.environ['XDG_CACHE_HOME'] = str(Path(tempfile.gettempdir()) / 'downloader-web' / 'provider-cache')
             os.environ['DENO_NO_PROMPT'] = '1'
             os.environ['DENO_NO_UPDATE_CHECK'] = '1'
@@ -138,6 +140,7 @@ class WebYouTubeProfile:
             'provider': 'bgutil', 'provider_version': self.version,
             'provider_mode': 'script', 'provider_installed': self.installed,
             'script_assets_available': self.assets, 'provider_ready': self.ready,
+            'provider_assets': dict(self.asset_checks),
             'provider_reached': self.attempted, 'po_token_attempted': self.attempted,
             'po_token_generated': self.generated, 'provider_result': result,
             'player_client': ','.join(PLAYER_CLIENTS),

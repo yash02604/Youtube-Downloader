@@ -30,6 +30,10 @@ size fix installs production dependencies only, verifies dependency symlinks
 stay inside bundled node_modules, and removes only Deno's duplicate global npm
 cache. All production/transitive/optional/native assets remain intact. Both
 offline smoke checks and the runtime launcher force manual node_modules mode.
+The runtime uses a writable temporary Deno cache; the absence of an empty
+build-time cache directory is not treated as a missing provider asset. All
+module resolution remains local/manual and cached-only, so this does not allow
+request-time dependency downloads.
 
 ## One profile for analysis and downloads
 
