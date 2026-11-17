@@ -1,4 +1,4 @@
-# IDM Clone - Internet Download Manager
+# Downloader WebPage - Internet Download Manager
 
 A Tkinter download manager with HTTP downloads, queue controls, and yt-dlp-based video support.
 
