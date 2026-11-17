@@ -15,6 +15,7 @@ from format_selector import FormatSelector
 logger = logging.getLogger(__name__)
 
 MIN_SUPPORTED_DENO = (2, 3, 0)
+MIN_SUPPORTED_NODE = (22, 0, 0)
 _validated_runtimes = {}
 
 
@@ -22,6 +23,10 @@ _validated_runtimes = {}
 class DenoRuntime:
     path: str
     version: str
+
+    @property
+    def name(self):
+        return "deno"
 
     @property
     def ytdlp_options(self):
@@ -32,6 +37,8 @@ class DenoRuntime:
 def discover_deno(
     configured_path: Optional[str] = None,
     application_dir: Optional[Path] = None,
+    *,
+    quiet: bool = False,
 ) -> Optional[DenoRuntime]:
     """Find a working, supported Deno executable in app, user, or PATH locations."""
     executable_name = "deno.exe" if os.name == "nt" else "deno"
@@ -107,18 +114,85 @@ def discover_deno(
         version_tuple = tuple(int(part) for part in match.groups())
         version = ".".join(match.groups())
         if version_tuple < MIN_SUPPORTED_DENO:
-            logger.info(
-                "Ignoring unsupported Deno %s at %s (minimum %s)",
-                version,
-                executable,
-                ".".join(map(str, MIN_SUPPORTED_DENO)),
-            )
+            if not quiet:
+                logger.info(
+                    "Ignoring unsupported Deno %s at %s (minimum %s)",
+                    version,
+                    executable,
+                    ".".join(map(str, MIN_SUPPORTED_DENO)),
+                )
             continue
 
         runtime = DenoRuntime(str(executable.resolve()), version)
         _validated_runtimes[key] = (signature, runtime)
-        logger.info("Resolved Deno JavaScript runtime: %s (%s)", runtime.path, runtime.version)
+        if not quiet:
+            logger.info("Resolved Deno JavaScript runtime: %s (%s)", runtime.path, runtime.version)
         return runtime
 
-    logger.info("Deno JavaScript runtime was not found or failed validation")
+    if not quiet:
+        logger.info("Deno JavaScript runtime was not found or failed validation")
+    return None
+
+
+@dataclass(frozen=True)
+class WebJavaScriptRuntime:
+    name: str
+    path: str
+    version: str
+
+    @property
+    def ytdlp_options(self):
+        return {"js_runtimes": {self.name: {"path": self.path}}}
+
+
+def discover_web_runtime(
+    configured_deno_path: Optional[str] = None,
+    application_dir: Optional[Path] = None,
+    *,
+    configured_node_path: Optional[str] = None,
+) -> Optional[WebJavaScriptRuntime]:
+    """Select installed Deno >=2.3 or Node >=22 without logging local paths.
+
+    No runtime or solver assets are downloaded. Explicit yt-dlp options keep its
+    default Deno configuration from hiding a validated Node fallback.
+    """
+    deno = discover_deno(configured_deno_path, application_dir, quiet=True)
+    if deno:
+        return WebJavaScriptRuntime("deno", deno.path, deno.version)
+
+    executable_name = "node.exe" if os.name == "nt" else "node"
+    candidates = []
+    if configured_node_path:
+        configured = Path(os.path.expandvars(os.path.expanduser(configured_node_path)))
+        candidates.append(configured / executable_name if configured.is_dir() else configured)
+    app_dir = Path(application_dir or Path(__file__).resolve().parent)
+    roots = [app_dir, Path(sys.executable).resolve().parent]
+    if getattr(sys, "_MEIPASS", None):
+        roots.append(Path(sys._MEIPASS))
+    for root in roots:
+        candidates.extend((root / executable_name, root / "bin" / executable_name,
+                           root / "node" / executable_name, root / "node" / "bin" / executable_name))
+    search_path = os.pathsep.join(filter(None, (
+        os.environ.get("PATH", ""), FormatSelector._registered_windows_path(),
+    )))
+    node_on_path = shutil.which("node", path=search_path)
+    if node_on_path:
+        candidates.append(Path(node_on_path))
+    seen = set()
+    for executable in candidates:
+        key = os.path.normcase(str(executable))
+        if key in seen or not executable.is_file():
+            continue
+        seen.add(key)
+        try:
+            result = subprocess.run(
+                [str(executable), "--version"], check=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        match = re.fullmatch(r"\s*v?(\d+)\.(\d+)\.(\d+)\s*", result.stdout or "")
+        if not match or tuple(map(int, match.groups())) < MIN_SUPPORTED_NODE:
+            continue
+        return WebJavaScriptRuntime("node", str(executable.resolve()), ".".join(match.groups()))
     return None

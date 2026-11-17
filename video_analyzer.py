@@ -110,7 +110,7 @@ class VideoAnalyzer:
         }
 
     @staticmethod
-    def get_video_info(url: str, *, allow_browser_session: bool = True) -> Optional[Dict]:
+    def get_video_info(url: str, *, allow_browser_session: bool = True, ytdlp_options=None) -> Optional[Dict]:
         """Extract metadata only; media is not downloaded."""
         options = {
             "quiet": True,
@@ -123,9 +123,12 @@ class VideoAnalyzer:
             options.update(youtube_session_options(url))
         deno_runtime = discover_deno(
             configured_path=config_manager.get("deno_location", ""),
+            **({'quiet': True} if ytdlp_options is not None else {}),
         )
         if deno_runtime:
             options.update(deno_runtime.ytdlp_options)
+        if ytdlp_options is not None:
+            options.update(ytdlp_options)
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=False)
         if not info:

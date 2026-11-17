@@ -83,10 +83,19 @@ export const API_URL = (
     ? ""
     : process.env.NEXT_PUBLIC_DOWNLOADER_API_URL || "http://localhost:8000"
 ).replace(/\/$/, "");
+const analysisErrorMessages = {
+  LOGIN_REQUIRED: "YouTube requires sign-in or verification for this video.",
+  JS_RUNTIME_UNAVAILABLE: "The server's YouTube JavaScript runtime is unavailable.",
+  EJS_UNAVAILABLE: "The server's YouTube challenge solver is unavailable.",
+  PO_TOKEN_REQUIRED: "YouTube requires additional playback verification on this server.",
+  UPSTREAM_REJECTED: "YouTube rejected the video analysis request.",
+  ANALYSIS_FAILED: "The video could not be analyzed.",
+} as const;
+type AnalysisErrorCode = keyof typeof analysisErrorMessages;
 export class ApiError extends Error {
-  constructor(public status: number) {
+  constructor(public status: number, public code?: AnalysisErrorCode) {
     super(
-      status === 400
+      code ? analysisErrorMessages[code] : status === 400
         ? "Enter a supported YouTube URL and check the download options."
         : status === 404
           ? "The video or download is not available."
@@ -119,7 +128,24 @@ async function request<T>(
   } catch {
     throw new ApiError(0);
   }
-  if (!response.ok) throw new ApiError(response.status);
+  if (!response.ok) {
+    let code: AnalysisErrorCode | undefined;
+    if (path === "/api/analyze") {
+      try {
+        const payload: unknown = await response.json();
+        if (
+          payload !== null && typeof payload === "object" && "code" in payload &&
+          typeof payload.code === "string" &&
+          Object.hasOwn(analysisErrorMessages, payload.code)
+        ) {
+          code = payload.code as AnalysisErrorCode;
+        }
+      } catch {
+        // Non-JSON errors retain the safe HTTP status fallback.
+      }
+    }
+    throw new ApiError(response.status, code);
+  }
   return response.json();
 }
 export const api = {

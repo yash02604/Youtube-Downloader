@@ -16,6 +16,7 @@ from core.manager import VideoAnalyzer, DownloadManager
 from .settings import Settings
 from .schemas import AnalyzeRequest, AnalyzeResponse, DownloadRequest, public_metadata, public_snapshot
 from .events import event_stream
+from .youtube_analysis import analyze_public_youtube, classify_error, MESSAGES
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ def create_app(settings=None, service=None, analyzer=None):
     if '*' in settings.frontend_origins:
         raise ValueError('Explicit frontend origins are required')
     policy = RootedDestinationPolicy(settings.download_root)
-    analyze = analyzer or partial(VideoAnalyzer.get_video_info, allow_browser_session=False)
+    analyze = analyzer or analyze_public_youtube
 
     @asynccontextmanager
     async def lifespan(app):
@@ -100,12 +101,11 @@ def create_app(settings=None, service=None, analyzer=None):
         try:
             info = await run_in_threadpool(analyze, body.url)
         except Exception as exc:
-            category = DownloadManager._classify_ytdlp_error(exc)
-            if category == 'LOGIN_REQUIRED':
-                raise HTTPException(409, 'Media requires sign-in or verification') from None
-            raise HTTPException(502, 'Media analysis failed') from None
+            code, _reason = classify_error(exc)
+            return JSONResponse({'code': code, 'message': MESSAGES[code]},
+                                status_code=409 if code == 'LOGIN_REQUIRED' else 502)
         if not info:
-            raise HTTPException(404, 'Media metadata unavailable')
+            return JSONResponse({'code': 'ANALYSIS_FAILED', 'message': MESSAGES['ANALYSIS_FAILED']}, status_code=404)
         return public_metadata(info)
 
     @app.post('/api/downloads', status_code=201)

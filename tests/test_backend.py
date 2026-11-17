@@ -100,11 +100,28 @@ class BackendTests(unittest.TestCase):
         self.analyzer.side_effect = RuntimeError('Sign in to confirm you are not a bot token=secret')
         response = self.client.post('/api/analyze', json={'url': URL})
         self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['code'], 'LOGIN_REQUIRED')
         self.assertNotIn('secret', response.text)
         with patch.object(self.service, 'list_downloads', side_effect=OSError('C:/private secret traceback')):
             response = self.client.get('/api/downloads')
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.json(), {'detail': 'Internal server error'})
+
+    def test_analysis_error_contract_uses_explicit_evidence(self):
+        for message, code in (
+            ('No supported JavaScript runtime could be found', 'JS_RUNTIME_UNAVAILABLE'),
+            ('yt-dlp-ejs is not installed', 'EJS_UNAVAILABLE'),
+            ('A PO Token is required for this client', 'PO_TOKEN_REQUIRED'),
+            ('HTTP Error 403: Forbidden', 'UPSTREAM_REJECTED'),
+            ('Unrecognized upstream response token=secret C:/private', 'ANALYSIS_FAILED'),
+        ):
+            with self.subTest(code=code):
+                self.analyzer.side_effect = RuntimeError(message)
+                response = self.client.post('/api/analyze', json={'url': URL})
+                self.assertEqual(response.status_code, 502)
+                self.assertEqual(response.json()['code'], code)
+                self.assertNotIn('secret', response.text)
+                self.assertNotIn('C:/', response.text)
 
     def test_snapshots_hide_paths_signed_urls_and_raw_errors(self):
         job = self.add_job()
@@ -161,7 +178,10 @@ class BackendTests(unittest.TestCase):
         with patch('web.backend.app.VideoAnalyzer.get_video_info', return_value={}) as analyze:
             with TestClient(create_app(self.settings, self.service), base_url='http://localhost') as client:
                 client.post('/api/analyze', json={'url': URL})
-            analyze.assert_called_once_with(URL, allow_browser_session=False)
+        analyze.assert_called_once()
+        self.assertEqual(analyze.call_args.args, (URL,))
+        self.assertFalse(analyze.call_args.kwargs['allow_browser_session'])
+        self.assertIn('logger', analyze.call_args.kwargs['ytdlp_options'])
 
     def test_fresh_process_dependency_direction(self):
         script = "import core,core.service,sys; assert 'tkinter' not in sys.modules; assert 'fastapi' not in sys.modules; import web.backend.app; assert 'tkinter' not in sys.modules"

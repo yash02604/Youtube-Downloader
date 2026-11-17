@@ -64,4 +64,43 @@ describe("public API helpers", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("raw secret")));
     await expect(api.health()).rejects.toEqual(new ApiError(0));
   });
+  it.each([
+    ["LOGIN_REQUIRED", 409, "YouTube requires sign-in or verification for this video."],
+    ["PO_TOKEN_REQUIRED", 422, "YouTube requires additional playback verification on this server."],
+    ["JS_RUNTIME_UNAVAILABLE", 503, "The server's YouTube JavaScript runtime is unavailable."],
+    ["EJS_UNAVAILABLE", 503, "The server's YouTube challenge solver is unavailable."],
+    ["UPSTREAM_REJECTED", 502, "YouTube rejected the video analysis request."],
+    ["ANALYSIS_FAILED", 500, "The video could not be analyzed."],
+    ["LOGIN_REQUIRED", 502, "YouTube requires sign-in or verification for this video."],
+  ])("maps explicit analysis code %s at HTTP %i safely", async (code, status, message) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ code, message: "C:/secret token=123" }), { status: Number(status) },
+    )));
+    await expect(api.analyze(input.url)).rejects.toMatchObject({
+      status, code, message,
+    });
+  });
+  it.each([
+    "C:/secret token=123",
+    JSON.stringify({ code: "UNKNOWN", message: "C:/secret token=123" }),
+    JSON.stringify({ detail: { code: "LOGIN_REQUIRED", message: "raw secret" } }),
+    JSON.stringify({ message: "LOGIN_REQUIRED" }),
+    "null",
+    JSON.stringify({ code: "toString", message: "raw secret" }),
+  ])("keeps unrecognized analysis conflict bodies generic: %s", async (body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 409 })));
+    await expect(api.analyze(input.url)).rejects.toMatchObject({
+      status: 409,
+      message: "This request conflicts with the current download state.",
+    });
+  });
+  it("keeps lifecycle conflicts generic even with an analysis code", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ code: "LOGIN_REQUIRED", message: "raw secret" }), { status: 409 },
+    )));
+    await expect(api.action("job", "pause")).rejects.toMatchObject({
+      status: 409,
+      message: "This request conflicts with the current download state.",
+    });
+  });
 });
