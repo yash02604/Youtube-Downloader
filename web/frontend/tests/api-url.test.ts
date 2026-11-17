@@ -18,6 +18,7 @@ it("uses same-origin REST and SSE in production even with a stale local URL", as
   const { api } = await import("../src/lib/api");
   await api.health();
   expect(fetch.mock.calls[0][0]).toBe("/api/health");
+  expect(fetch.mock.calls[0][1].credentials).toBe("same-origin");
   const { connectDownloads } = await import("../src/lib/events");
   const connection = connectDownloads({ snapshot: vi.fn(), event: vi.fn(), status: vi.fn() });
   await vi.waitFor(() => expect(EventSource).toHaveBeenCalledWith("/api/events"));
@@ -28,6 +29,11 @@ it("keeps the configurable local development API", async () => {
   vi.stubEnv("NODE_ENV", "development");
   vi.stubEnv("NEXT_PUBLIC_DOWNLOADER_API_URL", "http://localhost:8100/");
   vi.resetModules();
-  const { API_URL } = await import("../src/lib/api");
+  const fetch = vi.fn().mockImplementation(async () => new Response("{}"));
+  vi.stubGlobal("fetch", fetch);
+  const { api, API_URL } = await import("../src/lib/api");
   expect(API_URL).toBe("http://localhost:8100");
+  await api.health();
+  expect(fetch.mock.calls[0][0]).toBe("http://localhost:8100/api/health");
+  expect(fetch.mock.calls[0][1].credentials).toBe("same-origin");
 });

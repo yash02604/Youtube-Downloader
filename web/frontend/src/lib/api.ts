@@ -109,7 +109,7 @@ async function request<T>(
     response = await fetch(API_URL + path, {
       method,
       cache: "no-store",
-      credentials: "omit",
+      credentials: "same-origin",
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
       signal: signal
