@@ -1,0 +1,26 @@
+"$schema" = "https://openapi.vercel.sh/vercel.json"
+
+[services.frontend]
+root = "web/frontend/"
+framework = "nextjs"
+
+# Keep the shared downloader modules importable from the repository root.
+[services.backend]
+root = "."
+framework = "fastapi"
+entrypoint = "web.backend.vercel_app:app"
+
+[services.backend.functions."web/backend/vercel_app.py"]
+excludeFiles = "{web/frontend/**,tests/**,docs/**,packaging/**,smoke_test/**}"
+
+[[rewrites]]
+source = "/api"
+destination = { service = "backend" }
+
+[[rewrites]]
+source = "/api/(.*)"
+destination = { service = "backend" }
+
+[[rewrites]]
+source = "/(.*)"
+destination = { service = "frontend" }

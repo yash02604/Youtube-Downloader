@@ -79,7 +79,9 @@ export interface DownloadEvent {
   error_message?: string | null;
 }
 export const API_URL = (
-  process.env.NEXT_PUBLIC_DOWNLOADER_API_URL || "http://localhost:8000"
+  process.env.NODE_ENV === "production"
+    ? ""
+    : process.env.NEXT_PUBLIC_DOWNLOADER_API_URL || "http://localhost:8000"
 ).replace(/\/$/, "");
 export class ApiError extends Error {
   constructor(public status: number) {

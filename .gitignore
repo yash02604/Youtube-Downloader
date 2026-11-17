@@ -61,3 +61,7 @@ web/frontend/next-env.d.ts
 # Keep frontend source helpers despite the legacy Python lib/ ignore rule.
 !web/frontend/src/lib/
 !web/frontend/src/lib/**
+
+# Local Vercel project settings, environment and build output
+.vercel/
+/.env*
