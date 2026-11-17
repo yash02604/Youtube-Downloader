@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
@@ -47,6 +48,14 @@ class WebRuntimeTests(unittest.TestCase):
         assert (runtime.name, runtime.version) == ("deno", "2.3.0")
         assert runtime.ytdlp_options == {"js_runtimes": {"deno": {"path": str(deno.resolve())}}}
         log.assert_not_called()
+
+    def test_web_discovers_deno_python_wheel_binary(self):
+        deno = executable(self.root, 'wheel-deno.exe')
+        package = SimpleNamespace(find_deno_bin=lambda: str(deno))
+        with patch.dict('sys.modules', {'deno': package}), \
+                patch('js_runtime.subprocess.run', return_value=result('deno 2.9.8\n')):
+            runtime = discover_web_runtime(application_dir=self.root / 'app')
+        self.assertEqual((runtime.name, runtime.version), ('deno', '2.9.8'))
 
 
     def test_web_uses_supported_node(self):

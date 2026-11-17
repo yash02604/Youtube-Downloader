@@ -1,10 +1,26 @@
 """Safe web-only YouTube observations, never live media requests."""
 import json
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
 class AnalysisDiagnosticsTests(unittest.TestCase):
+    def test_web_profile_uses_verified_runtime_and_local_ejs_only(self):
+        from web.backend.youtube_analysis import analyze_public_youtube
+        runtime = SimpleNamespace(name='node', version='22.0.0',
+            ytdlp_options={'js_runtimes': {'node': {'path': 'private/runtime'}}})
+        with patch('web.backend.youtube_analysis.discover_web_runtime', return_value=runtime), \
+                patch('web.backend.youtube_analysis.probe_ejs_runtime', return_value={'runtime_executes': True}), \
+                patch('web.backend.youtube_analysis.VideoAnalyzer.get_video_info', return_value={'title':'public'}) as analyze:
+            analyze_public_youtube('https://youtube.com/watch?v=Auvd4NPXHnI')
+        options = analyze.call_args.kwargs['ytdlp_options']
+        self.assertEqual(options['js_runtimes'], runtime.ytdlp_options['js_runtimes'])
+        self.assertEqual(options['remote_components'], [])
+        self.assertFalse(options['cachedir'])
+        for forbidden in ('cookiesfrombrowser', 'cookiefile', 'po_token', 'extractor_args'):
+            self.assertNotIn(forbidden, options)
+
     def test_explicit_error_categories_and_safe_types(self):
         from web.backend.youtube_analysis import classify_error
         for text, code, reason in (

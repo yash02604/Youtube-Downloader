@@ -4,9 +4,11 @@ import json
 import logging
 import platform
 import re
+from pathlib import Path
 
 from js_runtime import discover_web_runtime
 from video_analyzer import VideoAnalyzer
+from .ejs_probe import probe_ejs_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -99,15 +101,18 @@ class SafeYtdlpLogger:
 
 def analyze_public_youtube(url):
     observation = SafeYtdlpLogger()
-    available = discover_web_runtime()
+    available = discover_web_runtime(application_dir=Path(__file__).parent / '_runtime')
     diagnostic = {
-        'event': 'youtube_analysis', 'profile': 'observe_existing_deno_configuration',
+        'event': 'youtube_analysis', 'profile': 'web_verified_js_local_ejs',
         'player_client_policy': 'yt-dlp-default',
         'yt_dlp_version': _version('yt-dlp'), 'ejs': ejs_status(),
         'os': platform.system(), 'python_version': platform.python_version(),
         'discovered_js_runtime': ({'name': available.name, 'version': available.version} if available else None),
     }
-    options = {'logger': observation, 'verbose': True}
+    options = {'logger': observation, 'verbose': True, 'remote_components': [], 'cachedir': False}
+    if available:
+        options.update(available.ytdlp_options)
+        diagnostic['ejs_probe'] = probe_ejs_runtime(available)
     try:
         result = VideoAnalyzer.get_video_info(url, allow_browser_session=False, ytdlp_options=options)
     except Exception as exc:

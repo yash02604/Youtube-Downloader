@@ -13,7 +13,13 @@ dependencies = [
     "Pillow>=10.0.0",
     "fastapi>=0.115,<1",
     "uvicorn>=0.30,<1",
+    # Vercel's Python image has no JS runtime. The official platform wheel
+    # supplies a pinned executable; desktop requirements.txt stays unchanged.
+    "deno==2.9.8; sys_platform == 'linux'",
 ]
 
 [tool.vercel]
 entrypoint = "web.backend.vercel_app:app"
+
+[tool.vercel.scripts]
+vercel-build = "python -m web.backend.package_runtime"

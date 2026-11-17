@@ -160,6 +160,18 @@ def discover_web_runtime(
     if deno:
         return WebJavaScriptRuntime("deno", deno.path, deno.version)
 
+    # The optional official wheel installs an executable outside the service
+    # source tree; its own locator also handles pip --target layouts.
+    try:
+        import deno as deno_package
+        packaged_path = deno_package.find_deno_bin()
+    except (ImportError, OSError, RuntimeError, AttributeError):
+        packaged_path = None
+    if packaged_path:
+        deno = discover_deno(packaged_path, application_dir, quiet=True)
+        if deno:
+            return WebJavaScriptRuntime("deno", deno.path, deno.version)
+
     executable_name = "node.exe" if os.name == "nt" else "node"
     candidates = []
     if configured_node_path:
