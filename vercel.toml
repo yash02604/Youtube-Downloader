@@ -8,7 +8,9 @@ framework = "nextjs"
 [services.backend]
 root = "."
 framework = "fastapi"
-entrypoint = "web.backend.vercel_app:app"
+# Declared-only mode also anchors Python dependency discovery at this root.
+# tool.vercel.entrypoint in pyproject.toml names the actual FastAPI application.
+entrypoint = "pyproject.toml"
 
 [services.backend.functions."web/backend/vercel_app.py"]
 excludeFiles = "{web/frontend/**,tests/**,docs/**,packaging/**,smoke_test/**}"

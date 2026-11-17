@@ -11,7 +11,7 @@ The single root project configuration is `vercel.toml`:
 | Service | Root | Framework | Entrypoint |
 | --- | --- | --- | --- |
 | frontend | `web/frontend/` | Next.js | Framework default |
-| backend | `.` | FastAPI | `web.backend.vercel_app:app` |
+| backend | `.` | FastAPI | `pyproject.toml` -> `web.backend.vercel_app:app` |
 
 The backend adapter only calls the existing `create_app()` factory. Imports
 resolve from the repository root, including `core/`, `download_manager.py` and
@@ -38,6 +38,12 @@ the explicit ASGI module via `tool.vercel.entrypoint`. Keep the shared runtime
 requirements aligned with `requirements.txt`; the desktop command
 `pip install -r requirements.txt` and the local backend command
 `pip install -r web/backend/requirements.txt` remain unchanged.
+
+The service explicitly selects `pyproject.toml` (declared-only mode). This
+anchors dependency discovery at the root and disables filename-based fallback
+to desktop `main.py`. Selecting the nested ASGI module directly instead caused
+Vercel's dependency discovery to select `web/backend/requirements.txt`, whose
+relative `-r` include failed its parser in the initial cloud preview build.
 
 On Vercel (`VERCEL=1`), web storage defaults to the system temporary directory
 under `downloader-web/`. `DOWNLOADER_WEB_ROOT` and `DOWNLOADER_WEB_STATE` still
