@@ -134,7 +134,7 @@ class ProviderPackagingTests(unittest.TestCase):
             self.assertEqual((server / 'node_modules' / 'runtime-asset.js').read_text(), 'required production asset')
             self.assertFalse((root / 'bgutil' / 'verification-cache').exists())
             download.assert_called_once_with(provider.ARCHIVE_URL, timeout=60)
-            self.assertEqual(commands[0][0][1:], ['install', '--prod', '--allow-scripts=npm:canvas', '--frozen'])
+            self.assertEqual(commands[0][0][1:], ['install', '--prod', '--entrypoint', 'src/generate_once.ts', '--allow-scripts=npm:canvas', '--frozen'])
             smoke = commands[1][0]
             self.assertIn('--cached-only', smoke)
             self.assertIn('--node-modules-dir=manual', smoke)

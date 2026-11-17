@@ -38,6 +38,12 @@ Vercel's Python builder also excludes node_modules by default. The backend
 function explicitly includes the generated provider production node_modules
 tree (including hidden .deno files) and upstream package-lock.json. Runtime
 asset diagnostics separately check the launcher, script and modules directory.
+Measured build output showed that the initial production install retained
+development packages in the isolated dependency store (including SWC,
+TypeScript and format/lint tools). Installation is therefore scoped to the
+production graph rooted at src/generate_once.ts using Deno's supported
+--prod --entrypoint mode. Build-only compiler caches are not deployed; runtime
+uses its writable temporary cache and cannot download missing modules.
 
 ## One profile for analysis and downloads
 

@@ -159,7 +159,8 @@ def package_provider(deno, destination=None):
         token_cache.mkdir()
         env = dict(os.environ, DENO_DIR=str(cache), XDG_CACHE_HOME=str(token_cache),
                    DENO_NO_PROMPT='1', DENO_NO_UPDATE_CHECK='1', FORCE_COLOR='false')
-        _run([str(deno), 'install', '--prod', '--allow-scripts=npm:canvas', '--frozen'],
+        _run([str(deno), 'install', '--prod', '--entrypoint', 'src/generate_once.ts',
+              '--allow-scripts=npm:canvas', '--frozen'],
              cwd=server, env=env, timeout=600)
         if not (server / 'node_modules').is_dir():
             raise RuntimeError('Pinned provider dependencies were not packaged')
@@ -207,5 +208,12 @@ def package_provider(deno, destination=None):
         ], cwd=final_server, env=final_env, timeout=60)
         if result.stdout.strip() != PROVIDER_VERSION:
             raise RuntimeError('Relocated provider version does not match its plugin')
+        # Only module files are deployed. Runtime Deno uses a writable temporary
+        # compiler cache; build-path-specific cache files add size but no code.
+        build_cache = destination / 'deno_dir'
+        if build_cache.is_symlink() or not build_cache.resolve().is_relative_to(destination.resolve()):
+            raise RuntimeError('Unsafe provider build cache path')
+        shutil.rmtree(build_cache)
+        build_cache.mkdir()
         _report_sizes(deno, final_server, destination / 'deno_dir')
     return destination / 'server'
