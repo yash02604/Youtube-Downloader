@@ -7,6 +7,7 @@ build this bundle on the same OS/architecture as the deployed function.
 import hashlib
 import io
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
@@ -29,6 +30,25 @@ REQUIRED_FILES = (
     'deno.json', 'deno.lock', 'package.json', 'package-lock.json',
     'src/generate_once.ts', 'src/session_manager.ts', 'src/utils.ts',
 )
+
+
+def _regular_bytes(root):
+    return sum(path.stat().st_size for path in Path(root).rglob('*')
+               if path.is_file() and not path.is_symlink())
+
+
+def _report_sizes(deno, server, cache):
+    # Build-only numeric measurements of public dependency names, no absolute
+    # paths, environment values, request details or token material.
+    print(f'Provider artifact bytes runtime={Path(deno).stat().st_size} '
+          f'modules={_regular_bytes(server / "node_modules")} cache={_regular_bytes(cache)}')
+    store = server / 'node_modules' / '.deno'
+    if store.is_dir():
+        largest = sorted(((path.name, _regular_bytes(path)) for path in store.iterdir()
+                          if path.is_dir() and not path.is_symlink()), key=lambda item: item[1], reverse=True)[:10]
+        for name, size in largest:
+            if re.fullmatch(r'[A-Za-z0-9@._+-]+', name):
+                print(f'Provider dependency bytes {name}={size}')
 
 # Upstream's plugin inherits stderr, whose exception text can include session
 # data. Keep its subprocess private and disallow runtime dependency downloads.
@@ -187,4 +207,5 @@ def package_provider(deno, destination=None):
         ], cwd=final_server, env=final_env, timeout=60)
         if result.stdout.strip() != PROVIDER_VERSION:
             raise RuntimeError('Relocated provider version does not match its plugin')
+        _report_sizes(deno, final_server, destination / 'deno_dir')
     return destination / 'server'
