@@ -24,6 +24,13 @@ validates script imports/version both before and after relocation without
 network permissions or token generation. Native canvas dependencies and Deno
 caches are bundled; final Linux cloud build/runtime validation is required.
 
+The first Linux build passed provider import/version validation but exceeded
+the builder's 225 MB function limit (321.91 MB after optimization). The bounded
+size fix installs production dependencies only, verifies dependency symlinks
+stay inside bundled node_modules, and removes only Deno's duplicate global npm
+cache. All production/transitive/optional/native assets remain intact. Both
+offline smoke checks and the runtime launcher force manual node_modules mode.
+
 ## One profile for analysis and downloads
 
 Vercel alone opts into `WebYouTubeProfile`: Deno, script mode, and initially

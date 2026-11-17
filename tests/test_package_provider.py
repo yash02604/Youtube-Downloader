@@ -37,7 +37,7 @@ class ProviderPackagingTests(unittest.TestCase):
             self.assertEqual(script, provider.PRIVATE_RUNTIME_SCRIPT)
             self.assertTrue(script.startswith('#!/bin/sh\n'))
             self.assertNotIn('\r', script)
-            self.assertIn('exec "$base/deno" run --cached-only --frozen "$@" 2>/dev/null', script)
+            self.assertIn('exec "$base/deno" run --cached-only --frozen --node-modules-dir=manual "$@" 2>/dev/null', script)
             self.assertIn('exec "$base/deno" "$@" 2>/dev/null', script)
             self.assertNotIn(str(deno), script)
             self.assertEqual(deno.read_bytes(), b'fixture executable')
@@ -113,6 +113,10 @@ class ProviderPackagingTests(unittest.TestCase):
             commands.append((command, kwargs))
             if command[1] == 'install':
                 (kwargs['cwd'] / 'node_modules').mkdir()
+                (kwargs['cwd'] / 'node_modules' / 'runtime-asset.js').write_text('required production asset')
+                duplicate = Path(kwargs['env']['DENO_DIR']) / 'npm'
+                duplicate.mkdir()
+                (duplicate / 'duplicate').touch()
             return SimpleNamespace(stdout='2.0.2\n')
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -126,11 +130,14 @@ class ProviderPackagingTests(unittest.TestCase):
             self.assertTrue((server / 'src' / 'generate_once.ts').is_file())
             self.assertTrue((server / 'node_modules').is_dir())
             self.assertTrue((root / 'bgutil' / 'deno_dir').is_dir())
+            self.assertFalse((root / 'bgutil' / 'deno_dir' / 'npm').exists())
+            self.assertEqual((server / 'node_modules' / 'runtime-asset.js').read_text(), 'required production asset')
             self.assertFalse((root / 'bgutil' / 'verification-cache').exists())
             download.assert_called_once_with(provider.ARCHIVE_URL, timeout=60)
-            self.assertEqual(commands[0][0][1:], ['install', '--allow-scripts=npm:canvas', '--frozen'])
+            self.assertEqual(commands[0][0][1:], ['install', '--prod', '--allow-scripts=npm:canvas', '--frozen'])
             smoke = commands[1][0]
             self.assertIn('--cached-only', smoke)
+            self.assertIn('--node-modules-dir=manual', smoke)
             self.assertNotIn('--allow-net', smoke)
             self.assertEqual(smoke[-1], '--version')
             self.assertTrue(commands[0][1]['env']['DENO_DIR'].endswith('deno_dir'))

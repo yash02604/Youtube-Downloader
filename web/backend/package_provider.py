@@ -37,7 +37,7 @@ PRIVATE_RUNTIME_SCRIPT = '''#!/bin/sh
 base=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
 if [ "$1" = run ]; then
     shift
-    exec "$base/deno" run --cached-only --frozen "$@" 2>/dev/null
+    exec "$base/deno" run --cached-only --frozen --node-modules-dir=manual "$@" 2>/dev/null
 else
     exec "$base/deno" "$@" 2>/dev/null
 fi
@@ -139,14 +139,25 @@ def package_provider(deno, destination=None):
         token_cache.mkdir()
         env = dict(os.environ, DENO_DIR=str(cache), XDG_CACHE_HOME=str(token_cache),
                    DENO_NO_PROMPT='1', DENO_NO_UPDATE_CHECK='1', FORCE_COLOR='false')
-        _run([str(deno), 'install', '--allow-scripts=npm:canvas', '--frozen'],
+        _run([str(deno), 'install', '--prod', '--allow-scripts=npm:canvas', '--frozen'],
              cwd=server, env=env, timeout=600)
         if not (server / 'node_modules').is_dir():
             raise RuntimeError('Pinned provider dependencies were not packaged')
+        modules = (server / 'node_modules').resolve()
+        for entry in modules.rglob('*'):
+            if entry.is_symlink() and not entry.resolve().is_relative_to(modules):
+                raise RuntimeError('Provider dependency links outside its bundled modules')
+        # Manual mode reads the complete production node_modules tree. Deno's
+        # global npm package cache duplicates those files and is not deployed.
+        npm_cache = cache / 'npm'
+        if npm_cache.exists():
+            if npm_cache.is_symlink() or not npm_cache.resolve().is_relative_to(cache.resolve()):
+                raise RuntimeError('Unsafe provider build cache path')
+            shutil.rmtree(npm_cache)
         # Eagerly import native canvas and all script dependencies, without giving
         # the smoke check network permission or generating any token.
         result = _run([
-            str(deno), 'run', '--cached-only', '--frozen', '--allow-env',
+            str(deno), 'run', '--cached-only', '--frozen', '--node-modules-dir=manual', '--allow-env',
             f'--allow-ffi={server / "node_modules"}',
             f'--allow-read={token_cache},{server / "node_modules"}',
             f'--allow-write={token_cache}',
@@ -168,7 +179,7 @@ def package_provider(deno, destination=None):
         final_server = destination / 'server'
         final_env = dict(env, DENO_DIR=str(destination / 'deno_dir'), XDG_CACHE_HOME=str(final_cache))
         result = _run([
-            str(deno), 'run', '--cached-only', '--frozen', '--allow-env',
+            str(deno), 'run', '--cached-only', '--frozen', '--node-modules-dir=manual', '--allow-env',
             f'--allow-ffi={final_server / "node_modules"}',
             f'--allow-read={final_cache},{final_server / "node_modules"}',
             f'--allow-write={final_cache}',
