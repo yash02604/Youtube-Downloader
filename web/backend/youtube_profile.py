@@ -12,7 +12,9 @@ from js_runtime import discover_web_runtime
 
 logger = logging.getLogger(__name__)
 PROVIDER_VERSION = '2.0.2'
-PLAYER_CLIENTS = ('mweb',)
+# Upstream's bounded fallback, enabled only after the deployed mweb probe was
+# rejected with LOGIN_REQUIRED before the provider could be invoked.
+PLAYER_CLIENTS = ('mweb', 'tv', 'web_safari')
 
 
 class ProviderFailure(RuntimeError):
@@ -51,6 +53,7 @@ class WebYouTubeProfile:
         self.attempted = False
         self.generated = False
         self.generation_failed = False
+        self.client_policy = ','.join(PLAYER_CLIENTS)
         self.options = {
             'logger': self.observation, 'verbose': True,
             'remote_components': [], 'cachedir': False,
@@ -143,7 +146,7 @@ class WebYouTubeProfile:
             'provider_assets': dict(self.asset_checks),
             'provider_reached': self.attempted, 'po_token_attempted': self.attempted,
             'po_token_generated': self.generated, 'provider_result': result,
-            'player_client': ','.join(PLAYER_CLIENTS),
+            'player_client': self.client_policy,
             'js_runtime': self.runtime.name if self.runtime else None,
             'runtime_version': self.runtime.version if self.runtime else None,
             'error_code': code,

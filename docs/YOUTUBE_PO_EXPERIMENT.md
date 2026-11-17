@@ -66,6 +66,20 @@ Provider cache files use ephemeral temporary storage, never frontend assets.
 There are no personal cookies, user account credentials, CAPTCHA automation,
 identity spoofing, proxy rotation or static PO tokens.
 
+## First ready provider probe
+
+Code 784b2f5f4dd12062c3f34719ad43eca80201ff18 built and deployed successfully.
+Production modules measured 79,244,259 bytes (versus 209,148,023 with Deno's
+isolated install); packaged Deno measured 96,055,992 bytes. Both offline startup
+checks passed. GET health returned 200. The normal public video aqz-KE-bpKQ
+returned 409 LOGIN_REQUIRED. Runtime diagnostics proved all assets available,
+provider_ready=true, client mweb observed, and BOT_VERIFICATION before any token
+request: provider_reached=false, po_token_attempted=false, po_token_generated=false.
+
+This triggered only the README's documented bounded client fallback:
+mweb,tv,web_safari. This is a web-only profile change shared by analysis and
+downloads, not a global desktop setting or random player-client cycle.
+
 ## Diagnostic semantics and stop gates
 
 Provider readiness means the plugin/version, local assets and script startup

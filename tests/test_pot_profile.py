@@ -38,7 +38,7 @@ class PoTokenProfileTests(unittest.TestCase):
 
     def test_shared_options_use_pinned_script_deno_and_mweb(self):
         profile = self.profile()
-        self.assertEqual(profile.options['extractor_args']['youtube']['player_client'], ['mweb'])
+        self.assertEqual(profile.options['extractor_args']['youtube']['player_client'], ['mweb', 'tv', 'web_safari'])
         self.assertEqual(profile.options['extractor_args']['youtubepot-bgutilscript']['server_home'],
                          [str(self.root/'bgutil/server')])
         self.assertEqual(profile.options['js_runtimes']['deno']['path'], str(self.root/'deno-private'))

@@ -126,7 +126,7 @@ def analyze_public_youtube(url):
         profile = WebYouTubeProfile(observation=observation, runtime=available)
         options = profile.options
         diagnostic['profile'] = 'vercel_bgutil_script'
-        diagnostic['player_client_policy'] = 'mweb'
+        diagnostic['player_client_policy'] = profile.client_policy
     try:
         setup = {'ytdlp_setup': profile.prepare} if profile else {}
         result = VideoAnalyzer.get_video_info(url, allow_browser_session=False, ytdlp_options=options, **setup)
