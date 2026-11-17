@@ -17,5 +17,11 @@ def package_runtime(destination=None):
 
 
 if __name__ == '__main__':
-    package_runtime()
-    print('Packaged pinned web JavaScript runtime')
+    if __package__:
+        from .package_provider import package_private_runtime, package_provider
+    else:
+        from package_provider import package_private_runtime, package_provider
+    runtime = package_runtime()
+    package_provider(runtime)
+    package_private_runtime(runtime)
+    print('Packaged pinned web JavaScript runtime and PO token provider')

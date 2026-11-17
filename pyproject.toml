@@ -16,6 +16,7 @@ dependencies = [
     # Vercel's Python image has no JS runtime. The official platform wheel
     # supplies a pinned executable; desktop requirements.txt stays unchanged.
     "deno==2.9.8; sys_platform == 'linux'",
+    "bgutil-ytdlp-pot-provider==2.0.2; sys_platform == 'linux'",
 ]
 
 [tool.vercel]

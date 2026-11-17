@@ -2,6 +2,7 @@
 import importlib.metadata
 import json
 import logging
+import os
 import platform
 import re
 from pathlib import Path
@@ -19,10 +20,15 @@ MESSAGES = {
     'PO_TOKEN_REQUIRED': 'YouTube requires additional playback verification.',
     'UPSTREAM_REJECTED': 'YouTube rejected the analysis request.',
     'ANALYSIS_FAILED': 'The video could not be analyzed.',
+    'PO_PROVIDER_UNAVAILABLE': 'The playback verification provider is unavailable.',
+    'PO_PROVIDER_INITIALIZATION_FAILED': 'The playback verification provider could not start.',
+    'PO_TOKEN_GENERATION_FAILED': 'Playback verification could not be completed.',
 }
 
 
 def classify_error(error):
+    if getattr(error, 'analysis_code', None) in MESSAGES:
+        return error.analysis_code, error.analysis_code
     # Inspect in memory only. Never forward exception text or extracted values.
     text = str(error).lower().replace('\u2019', "'")
     if 'not a bot' in text:
@@ -113,12 +119,28 @@ def analyze_public_youtube(url):
     if available:
         options.update(available.ytdlp_options)
         diagnostic['ejs_probe'] = probe_ejs_runtime(available)
+    profile = None
+    error = None
+    if os.environ.get('VERCEL') == '1':
+        from .youtube_profile import WebYouTubeProfile
+        profile = WebYouTubeProfile(observation=observation, runtime=available)
+        options = profile.options
+        diagnostic['profile'] = 'vercel_bgutil_script'
+        diagnostic['player_client_policy'] = 'mweb'
     try:
-        result = VideoAnalyzer.get_video_info(url, allow_browser_session=False, ytdlp_options=options)
+        setup = {'ytdlp_setup': profile.prepare} if profile else {}
+        result = VideoAnalyzer.get_video_info(url, allow_browser_session=False, ytdlp_options=options, **setup)
     except Exception as exc:
+        error = exc
         code, reason = classify_error(exc)
+        if profile and profile.generation_failed and code == 'ANALYSIS_FAILED':
+            from .youtube_profile import ProviderFailure
+            error = ProviderFailure('PO_TOKEN_GENERATION_FAILED')
+            code, reason = classify_error(error)
         diagnostic.update(code=code, reason=reason, exception_type=(type(exc).__name__
             if type(exc).__name__ in {'DownloadError', 'ExtractorError', 'RuntimeError', 'OSError', 'ValueError'} else 'Exception'))
+        if error is not exc:
+            raise error from None
         raise
     else:
         diagnostic.update(code='SUCCESS' if result else 'ANALYSIS_FAILED', reason='METADATA' if result else 'NO_METADATA')
@@ -126,4 +148,7 @@ def analyze_public_youtube(url):
     finally:
         diagnostic.update(observation.snapshot())
         diagnostic['po_token_provider_plugin_loaded'] = _pot_plugin_loaded()
+        if profile:
+            diagnostic.update(profile.safe_status(error))
+            diagnostic['error_code'] = diagnostic['code']
         logger.warning('youtube_analysis %s', json.dumps(diagnostic, sort_keys=True))

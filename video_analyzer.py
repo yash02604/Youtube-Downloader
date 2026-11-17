@@ -110,7 +110,8 @@ class VideoAnalyzer:
         }
 
     @staticmethod
-    def get_video_info(url: str, *, allow_browser_session: bool = True, ytdlp_options=None) -> Optional[Dict]:
+    def get_video_info(url: str, *, allow_browser_session: bool = True, ytdlp_options=None,
+                       ytdlp_setup=None) -> Optional[Dict]:
         """Extract metadata only; media is not downloaded."""
         options = {
             "quiet": True,
@@ -130,6 +131,8 @@ class VideoAnalyzer:
         if ytdlp_options is not None:
             options.update(ytdlp_options)
         with yt_dlp.YoutubeDL(options) as ydl:
+            if ytdlp_setup is not None:
+                ytdlp_setup(ydl)
             info = ydl.extract_info(url, download=False)
         if not info:
             return None

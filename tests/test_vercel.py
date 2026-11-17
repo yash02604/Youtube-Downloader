@@ -16,6 +16,20 @@ from web.backend.settings import Settings
 
 
 class VercelTests(unittest.TestCase):
+    def test_vercel_download_service_receives_shared_profile_factory(self):
+        from unittest.mock import Mock
+        from web.backend.app import create_app
+        from web.backend.youtube_profile import WebYouTubeProfile
+        with tempfile.TemporaryDirectory() as directory:
+            settings = Settings(download_root=Path(directory)/'downloads', state_root=Path(directory)/'state')
+            with patch.dict(os.environ, {'VERCEL':'1'}), patch('web.backend.app.DownloadService') as factory:
+                factory.return_value.list_downloads.return_value = []
+                factory.return_value.shutdown.return_value = True
+                with TestClient(create_app(settings), base_url='http://localhost'):
+                    pass
+            self.assertIs(factory.call_args.kwargs['youtube_profile_factory'], WebYouTubeProfile)
+            self.assertFalse(factory.call_args.kwargs['allow_browser_session'])
+
     def test_vercel_settings_use_writable_storage_and_exact_hosts(self):
         with patch.dict(os.environ, {'VERCEL': '1',
                 'VERCEL_URL': 'preview.vercel.app',

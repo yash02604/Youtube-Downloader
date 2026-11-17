@@ -96,6 +96,15 @@ class BackendTests(unittest.TestCase):
         self.assertNotIn('http_headers', response.text)
         self.assertEqual(response.json()['formats'][0]['height'], 2160)
 
+    def test_po_tokens_are_not_returned_with_metadata(self):
+        self.analyzer.return_value = {'title': 'Public', 'po_token': 'PRIVATE_PO_SENTINEL',
+            'formats': [{'format_id': '18', 'height': 360, 'po_token': 'PRIVATE_PO_SENTINEL',
+                         'url': 'https://media/?pot=PRIVATE_PO_SENTINEL'}]}
+        response = self.client.post('/api/analyze', json={'url': URL})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('PRIVATE_PO_SENTINEL', response.text)
+        self.assertNotIn('po_token', response.text)
+
     def test_verification_and_internal_errors_are_safe(self):
         self.analyzer.side_effect = RuntimeError('Sign in to confirm you are not a bot token=secret')
         response = self.client.post('/api/analyze', json={'url': URL})

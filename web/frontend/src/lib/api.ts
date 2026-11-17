@@ -88,6 +88,9 @@ const analysisErrorMessages = {
   JS_RUNTIME_UNAVAILABLE: "The server's YouTube JavaScript runtime is unavailable.",
   EJS_UNAVAILABLE: "The server's YouTube challenge solver is unavailable.",
   PO_TOKEN_REQUIRED: "YouTube requires additional playback verification on this server.",
+  PO_PROVIDER_UNAVAILABLE: "The server's playback verification provider is unavailable.",
+  PO_PROVIDER_INITIALIZATION_FAILED: "The server's playback verification provider could not start.",
+  PO_TOKEN_GENERATION_FAILED: "YouTube playback verification could not be completed.",
   UPSTREAM_REJECTED: "YouTube rejected the video analysis request.",
   ANALYSIS_FAILED: "The video could not be analyzed.",
 } as const;

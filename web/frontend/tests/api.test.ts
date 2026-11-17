@@ -67,6 +67,9 @@ describe("public API helpers", () => {
   it.each([
     ["LOGIN_REQUIRED", 409, "YouTube requires sign-in or verification for this video."],
     ["PO_TOKEN_REQUIRED", 422, "YouTube requires additional playback verification on this server."],
+    ["PO_PROVIDER_UNAVAILABLE", 503, "The server's playback verification provider is unavailable."],
+    ["PO_PROVIDER_INITIALIZATION_FAILED", 503, "The server's playback verification provider could not start."],
+    ["PO_TOKEN_GENERATION_FAILED", 502, "YouTube playback verification could not be completed."],
     ["JS_RUNTIME_UNAVAILABLE", 503, "The server's YouTube JavaScript runtime is unavailable."],
     ["EJS_UNAVAILABLE", 503, "The server's YouTube challenge solver is unavailable."],
     ["UPSTREAM_REJECTED", 502, "YouTube rejected the video analysis request."],
@@ -94,9 +97,12 @@ describe("public API helpers", () => {
       message: "This request conflicts with the current download state.",
     });
   });
-  it("keeps lifecycle conflicts generic even with an analysis code", async () => {
+  it.each([
+    "LOGIN_REQUIRED", "PO_PROVIDER_UNAVAILABLE",
+    "PO_PROVIDER_INITIALIZATION_FAILED", "PO_TOKEN_GENERATION_FAILED",
+  ])("keeps lifecycle conflicts generic even with analysis code %s", async (code) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ code: "LOGIN_REQUIRED", message: "raw secret" }), { status: 409 },
+      JSON.stringify({ code, message: "raw secret" }), { status: 409 },
     )));
     await expect(api.action("job", "pause")).rejects.toMatchObject({
       status: 409,

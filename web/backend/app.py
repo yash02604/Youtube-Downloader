@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 from functools import partial
 import logging
+import os
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -33,10 +34,14 @@ def create_app(settings=None, service=None, analyzer=None):
         if service is None:
             settings.download_root.mkdir(parents=True, exist_ok=True)
             settings.state_root.mkdir(parents=True, exist_ok=True)
+            compatibility = {}
+            if os.environ.get('VERCEL') == '1':
+                from .youtube_profile import WebYouTubeProfile
+                compatibility['youtube_profile_factory'] = WebYouTubeProfile
             instance = DownloadService(destination_policy=policy,
                 state_file=settings.state_root / 'download_state.json',
                 history_file=settings.state_root / 'download_history.json',
-                allow_browser_session=False)
+                allow_browser_session=False, **compatibility)
         else:
             instance = service
         app.state.service = instance

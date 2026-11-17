@@ -381,8 +381,10 @@ class DownloadManager(DownloadPersistence):
                  history_file: Optional[Path] = None,
                  state_file: Optional[Path] = None,
                  request_timeout: tuple = (10, 10),
-                 max_retries: int = 3, allow_browser_session: bool = True):
+                 max_retries: int = 3, allow_browser_session: bool = True,
+                 youtube_profile_factory=None):
         self.allow_browser_session = allow_browser_session
+        self.youtube_profile_factory = youtube_profile_factory
         self.downloads: dict[str, Download] = {}
         self.max_concurrent = max(1, max_concurrent_downloads)
         self.active_downloads = 0
@@ -1336,6 +1338,15 @@ class DownloadManager(DownloadPersistence):
         if not hasattr(download, 'yt_dlp_retries'):
             download.yt_dlp_retries = 0
             download.fallback_attempted = False
+
+        profile = None
+
+        def finish_profile(error=None):
+            if profile is not None:
+                try:
+                    profile.finish(error)
+                except Exception:
+                    logger.warning("YouTube compatibility diagnostics failed")
         
         try:
             destination_dir = getattr(download, "destination_dir", download.download_path)
@@ -1477,12 +1488,19 @@ class DownloadManager(DownloadPersistence):
                     "preferredquality": "0",
                 }]
 
+            if self.youtube_profile_factory is not None:
+                profile = self.youtube_profile_factory()
+                ydl_opts.update(profile.options)
+
             self._set_video_stage(download_id, "Fetching info", generation=generation)
             
             # Download in background thread
             def download_thread():
+                profile_error = None
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        if profile is not None:
+                            profile.prepare(ydl)
                         download.ydl_process = ydl
                         info = ydl.extract_info(
                             download.original_url,
@@ -1558,7 +1576,8 @@ class DownloadManager(DownloadPersistence):
                         self._persist_downloads()
                         if download.execution_generation == generation:
                             self._notify_status_change(download_id, download.status)
-                except DownloadCancelled:
+                except DownloadCancelled as e:
+                    profile_error = e
                     with self.lock:
                         if download.execution_generation != generation:
                             return
@@ -1573,6 +1592,7 @@ class DownloadManager(DownloadPersistence):
                     self._persist_downloads()
                     self._notify_status_change(download_id, terminal_status)
                 except Exception as e:
+                    profile_error = e
                     if download.execution_generation != generation:
                         return
                     if download.cancel_requested or download.status == "Cancelling":
@@ -1604,6 +1624,7 @@ class DownloadManager(DownloadPersistence):
                     self._persist_downloads()
                     self._notify_status_change(download_id, result_status)
                 finally:
+                    finish_profile(profile_error)
                     if download.execution_generation == generation:
                         download.ydl_process = None
                     self._release_active_slot(download_id, generation)
@@ -1620,6 +1641,7 @@ class DownloadManager(DownloadPersistence):
             # generation checks prevent either one's late hooks from winning.
             
         except Exception as e:
+            finish_profile(e)
             if download.execution_generation == generation:
                 with self.lock:
                     if download.cancel_requested or download.status == "Cancelling":
