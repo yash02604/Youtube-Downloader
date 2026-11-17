@@ -34,6 +34,10 @@ The runtime uses a writable temporary Deno cache; the absence of an empty
 build-time cache directory is not treated as a missing provider asset. All
 module resolution remains local/manual and cached-only, so this does not allow
 request-time dependency downloads.
+Vercel's Python builder also excludes node_modules by default. The backend
+function explicitly includes the generated provider production node_modules
+tree (including hidden .deno files) and upstream package-lock.json. Runtime
+asset diagnostics separately check the launcher, script and modules directory.
 
 ## One profile for analysis and downloads
 

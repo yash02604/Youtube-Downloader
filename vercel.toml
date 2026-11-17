@@ -14,6 +14,10 @@ entrypoint = "pyproject.toml"
 
 [services.backend.functions."web/backend/vercel_app.py"]
 excludeFiles = "{web/frontend/**,tests/**,docs/**,packaging/**,smoke_test/**}"
+includeFiles = [
+    "web/backend/_runtime/bgutil/server/node_modules/**",
+    "web/backend/_runtime/bgutil/server/package-lock.json",
+]
 
 [[rewrites]]
 source = "/api"
